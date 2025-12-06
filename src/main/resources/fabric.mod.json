@@ -1,0 +1,38 @@
+{
+	"schemaVersion": 1,
+	"id": "slchannelpointmod",
+	"version": "${version}",
+	"name": "SLChannelPointMod",
+	"description": "Channel points integration mod",
+	"authors": [
+		"Me!"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/slchannelpointmod/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"andrew.slchannelpointmod.SLChannelPointMod"
+		],
+		"client": [
+			"andrew.slchannelpointmod.SLChannelPointModClient"
+		]
+	},
+	"mixins": [
+		"slchannelpointmod.mixins.json",
+		{
+			"config": "slchannelpointmod.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.18.1",
+		"minecraft": "~1.21.10",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}
