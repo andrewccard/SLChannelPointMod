@@ -5,12 +5,15 @@ A Minecraft Fabric mod that integrates Twitch channel point redemptions with in-
 ## Features
 
 - **Twitch Integration** - Connects to Twitch EventSub to receive real-time channel point redemptions
-- **Automatic Reward Creation** - Creates channel point rewards directly on Twitch from in-game commands
+- **Easy GUI Configuration** - All setup done through an intuitive in-game menu (via Mod Menu)
 - **Multiple Action Types**:
   - **Spawn Mobs** - Spawn any mob near the player
+  - **Random Mobs** - Spawn random mobs from a configurable pool
   - **Give Items** - Give items to the player
-  - **Run Commands** - Execute any server command
-- **Test Mode** - Test rewards locally without needing a Twitch connection
+  - **Run Commands** - Execute any server command with placeholders
+- **Sync from Twitch** - Import existing channel point rewards from your Twitch channel
+- **Publish to Twitch** - Create new channel point rewards directly from the mod
+- **On-Screen HUD** - See redemptions as they happen with customizable position and scale
 - **Persistent Config** - Rewards are saved and persist across server restarts
 
 ## Requirements
@@ -18,117 +21,84 @@ A Minecraft Fabric mod that integrates Twitch channel point redemptions with in-
 - Minecraft 1.21.10
 - Fabric Loader 0.18.1+
 - Fabric API
+- Mod Menu (for accessing the configuration GUI)
 - Java 21+
 
 ## Installation
 
 1. Install [Fabric Loader](https://fabricmc.net/use/installer/)
 2. Download [Fabric API](https://modrinth.com/mod/fabric-api)
-3. Download the latest release of SLChannelPointMod
-4. Place both mods in your `mods` folder
+3. Download [Mod Menu](https://modrinth.com/mod/modmenu)
+4. Download the latest release of SLChannelPointMod
+5. Place all mods in your `mods` folder
 
 ## Setup
 
-### 1. Authenticate with Twitch
+### 1. Open the Configuration GUI
 
-Run this command in-game (requires operator permissions):
+There are several ways to open the configuration GUI:
+- Press **K** (default keybind) while in-game
+- Type `/channelpoints` in chat
+- Press **Escape** > **Mods** > find **SL Channel Point Mod** > click configure (gear icon)
 
-```
-/twitch login
-```
+### 2. Login to Twitch
 
-A browser window will open. Log in to Twitch and authorize the application.
+1. Go to the **Settings** tab
+2. Expand **Twitch Connection**
+3. Click **Login with Twitch**
+4. A browser window will open - authorize the application
+5. Return to the game once authenticated
 
-### 2. Connect to Twitch
+### 3. Connect to Twitch
 
-```
-/twitch connect
-```
+After logging in, click **Connect** to start receiving channel point redemptions.
 
-You'll see a confirmation message when connected.
+### 4. Configure Rewards
 
-### 3. Create Rewards
+**Option A: Sync existing rewards from Twitch**
+1. Go to the **Rewards** tab
+2. Click **Sync from Twitch** to import your existing channel point rewards
+3. Select a reward and click **Edit** to configure what action it triggers
 
-Rewards are automatically created on your Twitch channel:
+**Option B: Create new rewards**
+1. Click **+ Add Reward** to create a new reward
+2. Enter a name, cost, and configure the action
+3. Click **Save**
+4. Optionally click **Publish** to create the reward on your Twitch channel
 
-```
-/twitch reward add "Spawn Creeper" 100 spawn minecraft:creeper 3
-/twitch reward add "Free Diamonds" 500 give minecraft:diamond 5
-/twitch reward add "Lightning Strike" 1000 command summon lightning_bolt ~ ~ ~
-```
+That's it! When viewers redeem channel points, the configured actions will trigger in-game.
 
-That's it! When viewers redeem these channel points, the actions will trigger in-game.
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `/twitch help` | Show all commands |
-| `/twitch setup` | Show setup instructions |
-| `/twitch login` | Authenticate with Twitch |
-| `/twitch logout` | Clear authentication |
-| `/twitch status` | Show connection status |
-| `/twitch connect` | Connect to Twitch EventSub |
-| `/twitch disconnect` | Disconnect from EventSub |
-| `/twitch reconnect` | Reconnect to EventSub |
-| `/twitch reward add <name> <cost> <action>` | Create a reward |
-| `/twitch reward remove <name>` | Delete a reward |
-| `/twitch reward list` | List all configured rewards |
-| `/twitch test <reward> [username]` | Simulate a redemption |
-| `/twitch testmode [on/off]` | Toggle local testing mode |
-
-## Reward Actions
+## Action Types
 
 ### Spawn Mob
 Spawns mobs near a random player.
+- Select the mob type using the browse button
+- Set the count (or use random range)
 
-```
-/twitch reward add "Spawn Zombies" 100 spawn minecraft:zombie 5
-```
+### Random Mob (Same/Each)
+Spawns random mobs from the configured mob pool.
+- **Same**: All spawned mobs are the same random type
+- **Each**: Each mob is randomly selected individually
+- Configure the mob pool in Settings > Random Mob Pool
 
 ### Give Item
 Gives items to a random player.
-
-```
-/twitch reward add "Free Food" 50 give minecraft:cooked_beef 16
-```
+- Select the item using the browse button
+- Set the quantity
 
 ### Execute Command
-Runs a server command. Use `{player}` for the target player's name and `{redeemer}` for the Twitch username.
+Runs a server command with placeholder support.
+- `{player}` - Replaced with the target player's name
+- `{redeemer}` - Replaced with the Twitch username who redeemed
 
-```
-/twitch reward add "Announce" 10 command say {redeemer} says hello to {player}!
-/twitch reward add "Smite" 500 command execute at @r run summon lightning_bolt ~ ~ ~
-```
+Example: `say {redeemer} says hello to {player}!`
 
-## Testing Without Twitch
+## HUD Settings
 
-You can test rewards without connecting to Twitch:
-
-```
-/twitch testmode on
-/twitch reward add "Test Reward" 100 spawn minecraft:pig 1
-/twitch test "Test Reward" TestViewer
-```
-
-### Testing with Twitch CLI
-
-For more realistic testing, use the official [Twitch CLI](https://github.com/twitchdev/twitch-cli):
-
-1. Install Twitch CLI
-2. Start the mock server:
-   ```
-   twitch event websocket start-server
-   ```
-3. In Minecraft:
-   ```
-   /twitch testmode on
-   /twitch connect
-   ```
-4. Send test events:
-   ```
-   twitch event trigger channel.channel_points_custom_reward_redemption.add --transport=websocket -r "Spawn Creeper" -u "TestViewer"
-   ```
+The mod displays on-screen notifications when rewards are redeemed. Customize in Settings > HUD Settings:
+- **Position** - Top-left, top-right, bottom-left, or bottom-right
+- **Max Messages** - How many redemptions to show at once (1-10)
+- **Scale** - Size of the HUD text (0.5x - 2.0x)
 
 ## Configuration
 
@@ -136,6 +106,8 @@ Config is stored in `.minecraft/config/slchannelpointmod.json` and includes:
 - Twitch authentication tokens
 - Channel information
 - Configured rewards and their actions
+- HUD settings
+- Random mob pool
 
 ## Permissions
 
@@ -145,21 +117,16 @@ The mod requires these Twitch permissions (requested during login):
 
 ## Troubleshooting
 
-### "Not authenticated" error
-Run `/twitch login` and complete the browser authentication.
-
-### "Failed to connect" error
-- Check that your Twitch token is valid with `/twitch status`
-- Try `/twitch login` again if the token expired
-- Make sure you have an active internet connection
+### Can't login / Browser doesn't open
+Copy the URL from the chat/logs and open it manually in your browser.
 
 ### Rewards not triggering
-- Verify you're connected with `/twitch status`
-- Check that the reward name matches exactly (case-insensitive)
-- Use `/twitch reward list` to see configured rewards
+- Verify you're connected (check the Twitch Connection status in Settings)
+- Make sure the reward has an action configured (not showing as red/unconfigured)
+- Try disconnecting and reconnecting
 
-### Browser doesn't open during login
-Copy the URL from the chat/logs and open it manually in your browser.
+### Token expired
+Go to Settings > Twitch Connection and click **Re-login**.
 
 ## Building from Source
 

@@ -31,7 +31,7 @@ public class SLChannelPointMod implements ModInitializer {
 		ServerLifecycleEvents.SERVER_STARTED.register(server -> {
 			RewardHandler.setServer(server);
 			andrew.slchannelpointmod.twitch.TwitchEventSub.setServer(server);
-			LOGGER.info("SLChannelPointMod ready! Use /twitch login to authenticate.");
+			LOGGER.info("SLChannelPointMod ready! Use /channelpoints or press K to open configuration.");
 		});
 
 		ServerLifecycleEvents.SERVER_STOPPING.register(server -> {

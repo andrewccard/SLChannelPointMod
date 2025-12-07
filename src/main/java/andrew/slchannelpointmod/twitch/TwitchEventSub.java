@@ -50,7 +50,8 @@ public class TwitchEventSub {
     }
 
     private static void broadcastMessage(String message) {
-        if (server != null) {
+        // Only broadcast if chat messages are enabled in settings
+        if (server != null && ModConfig.get().isShowChatMessages()) {
             server.execute(() -> {
                 server.getPlayerList().broadcastSystemMessage(
                         Component.literal(message),

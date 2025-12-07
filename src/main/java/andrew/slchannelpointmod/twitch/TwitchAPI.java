@@ -15,13 +15,14 @@ import java.util.function.Consumer;
 public class TwitchAPI {
 
     private static final String PRODUCTION_API = "https://api.twitch.tv/helix";
+    // Twitch CLI mock-api uses /mock prefix
     private static final String TEST_API = "http://localhost:8080/mock";
 
     private static String getApiBase() {
         return TwitchEventSub.isTestMode() ? TEST_API : PRODUCTION_API;
     }
 
-    public static void createReward(String title, int cost, Consumer<String> callback) {
+    public static void createReward(String title, int cost, int cooldownSeconds, Consumer<String> callback) {
         String token = ModConfig.get().getAccessToken();
         String channelId = ModConfig.get().getChannelId();
 
@@ -37,6 +38,12 @@ public class TwitchAPI {
             body.addProperty("cost", cost);
             body.addProperty("is_enabled", true);
             body.addProperty("is_user_input_required", false);
+
+            // Add cooldown if specified
+            if (cooldownSeconds > 0) {
+                body.addProperty("is_global_cooldown_enabled", true);
+                body.addProperty("global_cooldown_seconds", cooldownSeconds);
+            }
 
             HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder()
@@ -78,6 +85,58 @@ public class TwitchAPI {
         }
     }
 
+    public static void updateReward(String rewardId, int cost, int cooldownSeconds, Consumer<Boolean> callback) {
+        String token = ModConfig.get().getAccessToken();
+        String channelId = ModConfig.get().getChannelId();
+
+        if (token == null || token.isEmpty() || channelId == null || channelId.isEmpty()) {
+            SLChannelPointMod.LOGGER.error("Not authenticated, cannot update reward");
+            callback.accept(false);
+            return;
+        }
+
+        try {
+            JsonObject body = new JsonObject();
+            body.addProperty("cost", cost);
+
+            // Update cooldown settings
+            if (cooldownSeconds > 0) {
+                body.addProperty("is_global_cooldown_enabled", true);
+                body.addProperty("global_cooldown_seconds", cooldownSeconds);
+            } else {
+                body.addProperty("is_global_cooldown_enabled", false);
+            }
+
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(getApiBase() + "/channel_points/custom_rewards?broadcaster_id=" + channelId + "&id=" + rewardId))
+                    .header("Authorization", "Bearer " + token)
+                    .header("Client-Id", TwitchAuth.getClientId())
+                    .header("Content-Type", "application/json")
+                    .method("PATCH", HttpRequest.BodyPublishers.ofString(body.toString()))
+                    .build();
+
+            client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .thenAccept(response -> {
+                        if (response.statusCode() == 200) {
+                            SLChannelPointMod.LOGGER.info("Updated Twitch reward: " + rewardId);
+                            callback.accept(true);
+                        } else {
+                            SLChannelPointMod.LOGGER.error("Failed to update reward: " + response.statusCode() + " - " + response.body());
+                            callback.accept(false);
+                        }
+                    })
+                    .exceptionally(e -> {
+                        SLChannelPointMod.LOGGER.error("Failed to update reward", e);
+                        callback.accept(false);
+                        return null;
+                    });
+        } catch (Exception e) {
+            SLChannelPointMod.LOGGER.error("Failed to update reward", e);
+            callback.accept(false);
+        }
+    }
+
     public static void deleteReward(String rewardId, Consumer<Boolean> callback) {
         String token = ModConfig.get().getAccessToken();
         String channelId = ModConfig.get().getChannelId();
@@ -115,6 +174,54 @@ public class TwitchAPI {
         } catch (Exception e) {
             SLChannelPointMod.LOGGER.error("Failed to delete reward", e);
             callback.accept(false);
+        }
+    }
+
+    /**
+     * Check if channel points are enabled for the channel.
+     * Channel points require affiliate or partner status.
+     * @param callback receives true if enabled, false if not, null on error
+     */
+    public static void checkChannelPointsEnabled(Consumer<Boolean> callback) {
+        String token = ModConfig.get().getAccessToken();
+        String channelId = ModConfig.get().getChannelId();
+
+        if (token == null || token.isEmpty() || channelId == null || channelId.isEmpty()) {
+            callback.accept(null);
+            return;
+        }
+
+        try {
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(getApiBase() + "/channel_points/custom_rewards?broadcaster_id=" + channelId))
+                    .header("Authorization", "Bearer " + token)
+                    .header("Client-Id", TwitchAuth.getClientId())
+                    .GET()
+                    .build();
+
+            client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .thenAccept(response -> {
+                        if (response.statusCode() == 200) {
+                            // Successfully got rewards - channel points are enabled
+                            callback.accept(true);
+                        } else if (response.statusCode() == 403) {
+                            // 403 Forbidden means channel points not available (not affiliate/partner)
+                            callback.accept(false);
+                        } else {
+                            // Other error
+                            SLChannelPointMod.LOGGER.warn("Channel points check returned status: " + response.statusCode());
+                            callback.accept(null);
+                        }
+                    })
+                    .exceptionally(e -> {
+                        SLChannelPointMod.LOGGER.error("Failed to check channel points", e);
+                        callback.accept(null);
+                        return null;
+                    });
+        } catch (Exception e) {
+            SLChannelPointMod.LOGGER.error("Failed to check channel points", e);
+            callback.accept(null);
         }
     }
 

@@ -20,7 +20,12 @@
       "WebFetch(domain:dev.twitch.tv)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:twitch-rs.github.io)",
-      "WebFetch(domain:stackoverflow.com)"
+      "WebFetch(domain:stackoverflow.com)",
+      "WebFetch(domain:modrinth.com)",
+      "WebFetch(domain:docs.isxander.dev)",
+      "WebFetch(domain:maven.fabricmc.net)",
+      "Bash(.gradlew.bat runClient)",
+      "Bash(del \"D:\\MinecraftMods\\SlChannelPointMod\\src\\client\\java\\andrew\\slchannelpointmod\\gui\\RandomMobConfigScreen.java\")"
     ],
     "deny": [],
     "ask": []
