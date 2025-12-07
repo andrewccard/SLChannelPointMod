@@ -10,6 +10,7 @@ import com.google.gson.JsonObject;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
@@ -306,8 +307,13 @@ public class MainConfigScreen extends Screen {
         // Row 2: Publish/Update/Unpublish, Hide/Show (above row 1)
         int row2Y = buttonY - 24;
         boolean isPublished = selectedEntry != null && selectedEntry.action.hasTwitchReward();
-        boolean canPublish = selectedEntry != null && !isPublished &&
+        // Random mob types don't need a value since they pick from a mob pool
+        boolean needsValue = selectedEntry != null &&
+                selectedEntry.action.getEffectiveType() != RewardAction.ActionType.RANDOM_MOB_SAME &&
+                selectedEntry.action.getEffectiveType() != RewardAction.ActionType.RANDOM_MOB_EACH;
+        boolean hasValue = selectedEntry != null &&
                 selectedEntry.action.getValue() != null && !selectedEntry.action.getValue().isEmpty();
+        boolean canPublish = selectedEntry != null && !isPublished && (!needsValue || hasValue);
 
         // Layout depends on whether reward is published (3 buttons) or not (2 buttons)
         int smallBtnWidth = 60;
@@ -342,26 +348,38 @@ public class MainConfigScreen extends Screen {
             unpublishBtn.active = hasToken && hasSelection;
             this.addRenderableWidget(unpublishBtn);
 
-            // Hide button for published
+            // Hide button for published - shows warning and unpublishes first
             boolean isHiddenPub = selectedEntry.action.isHidden();
             String hideTextPub = isHiddenPub ? "Unhide" : "Hide";
             Button hideBtnPub = Button.builder(Component.literal(hideTextPub), btn -> {
                 if (selectedRewardIndex >= 0 && selectedRewardIndex < rewardEntries.size()) {
                     RewardEntry entry = rewardEntries.get(selectedRewardIndex);
                     boolean wasHidden = entry.action.isHidden();
-                    entry.action.setHidden(!wasHidden);
-                    ModConfig.get().setReward(entry.name, entry.action);
-                    if (!showHiddenRewards && !wasHidden) {
-                        selectedRewardIndex = -1;
-                        selectedRewardName = null;
+                    if (wasHidden) {
+                        // Unhiding - no confirmation needed
+                        entry.action.setHidden(false);
+                        ModConfig.get().setReward(entry.name, entry.action);
+                        rebuildWidgets();
+                    } else {
+                        // Hiding a published reward - show confirmation
+                        this.minecraft.setScreen(new ConfirmScreen(
+                                confirmed -> {
+                                    if (confirmed) {
+                                        // Unpublish and hide
+                                        hideAndUnpublishReward(entry);
+                                    }
+                                    this.minecraft.setScreen(this);
+                                },
+                                Component.literal("Hide Published Reward?"),
+                                Component.literal("This will unpublish \"" + entry.name + "\" from Twitch and hide it from the list.")
+                        ));
                     }
-                    rebuildWidgets();
                 }
             })
                     .pos(row2StartX + (smallBtnWidth + spacing) * 2, row2Y)
                     .size(smallBtnWidth, 20)
                     .tooltip(Tooltip.create(Component.literal(isHiddenPub ?
-                            "Show in list" : "Hide from list")))
+                            "Show in list" : "Unpublish and hide from list")))
                     .build();
             hideBtnPub.active = hasSelection;
             this.addRenderableWidget(hideBtnPub);
@@ -528,9 +546,9 @@ public class MainConfigScreen extends Screen {
             // Status indicators on right side
             int rightX = listX + listWidth - 5;
 
-            // Published status indicator
+            // Published status indicator (green circle = published, gray circle = not published)
             boolean isPublished = entry.action.hasTwitchReward();
-            String statusIcon = isPublished ? "\u2713" : "\u25CB";  // Checkmark or circle
+            String statusIcon = "\u25CF";  // Filled circle
             int statusColor = isHidden ? 0xFF666666 : (isPublished ? 0xFF55FF55 : 0xFF888888);
             int statusWidth = this.font.width(statusIcon);
             graphics.drawString(this.font, statusIcon, rightX - statusWidth, entryY + 3, statusColor);
@@ -727,6 +745,62 @@ public class MainConfigScreen extends Screen {
                     entry.action.setTwitchRewardId(null);
                     ModConfig.get().setReward(entry.name, entry.action);
                     syncStatus = "Unpublished: " + entry.name;
+                } else {
+                    syncStatus = "Failed to unpublish";
+                }
+                syncStatusTime = System.currentTimeMillis();
+                rebuildWidgets();
+            });
+        });
+    }
+
+    private void hideAndUnpublishReward(RewardEntry entry) {
+        // Check if in test mode - unpublish won't work with mock server
+        if (TwitchEventSub.isTestMode()) {
+            syncStatus = "Cannot unpublish in test mode";
+            syncStatusTime = System.currentTimeMillis();
+            // Still hide locally
+            entry.action.setHidden(true);
+            ModConfig.get().setReward(entry.name, entry.action);
+            if (!showHiddenRewards) {
+                selectedRewardIndex = -1;
+                selectedRewardName = null;
+            }
+            rebuildWidgets();
+            return;
+        }
+
+        if (!entry.action.hasTwitchReward()) {
+            // Not published, just hide
+            entry.action.setHidden(true);
+            ModConfig.get().setReward(entry.name, entry.action);
+            if (!showHiddenRewards) {
+                selectedRewardIndex = -1;
+                selectedRewardName = null;
+            }
+            rebuildWidgets();
+            return;
+        }
+
+        syncStatus = "Unpublishing and hiding...";
+        syncStatusTime = System.currentTimeMillis();
+
+        String rewardId = entry.action.getTwitchRewardId();
+
+        TwitchAPI.deleteReward(rewardId, success -> {
+            if (this.minecraft == null) return;
+
+            this.minecraft.execute(() -> {
+                if (success) {
+                    // Success - clear the Twitch ID and hide
+                    entry.action.setTwitchRewardId(null);
+                    entry.action.setHidden(true);
+                    ModConfig.get().setReward(entry.name, entry.action);
+                    syncStatus = "Hidden: " + entry.name;
+                    if (!showHiddenRewards) {
+                        selectedRewardIndex = -1;
+                        selectedRewardName = null;
+                    }
                 } else {
                     syncStatus = "Failed to unpublish";
                 }

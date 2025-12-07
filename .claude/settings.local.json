@@ -25,7 +25,10 @@
       "WebFetch(domain:docs.isxander.dev)",
       "WebFetch(domain:maven.fabricmc.net)",
       "Bash(.gradlew.bat runClient)",
-      "Bash(del \"D:\\MinecraftMods\\SlChannelPointMod\\src\\client\\java\\andrew\\slchannelpointmod\\gui\\RandomMobConfigScreen.java\")"
+      "Bash(del \"D:\\MinecraftMods\\SlChannelPointMod\\src\\client\\java\\andrew\\slchannelpointmod\\gui\\RandomMobConfigScreen.java\")",
+      "Bash(cmd /c \"gradlew.bat build\")",
+      "Bash(gradlew.bat build:*)",
+      "Bash(./gradlew.bat build)"
     ],
     "deny": [],
     "ask": []
