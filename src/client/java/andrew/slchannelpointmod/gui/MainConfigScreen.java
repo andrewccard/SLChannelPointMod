@@ -49,10 +49,6 @@ public class MainConfigScreen extends Screen {
     private String syncStatus = null;
     private long syncStatusTime = 0;
 
-    // Channel points status: null = unknown/checking, true = enabled, false = not enabled
-    private Boolean channelPointsEnabled = null;
-    private boolean channelPointsChecked = false;
-
     // Show hidden rewards toggle
     private boolean showHiddenRewards = false;
 
@@ -136,6 +132,9 @@ public class MainConfigScreen extends Screen {
             }
         }
 
+        // Sort alphabetically by name (case-insensitive)
+        rewardEntries.sort((a, b) -> a.name.compareToIgnoreCase(b.name));
+
         // Restore selection by name after rebuilding the list (case-insensitive)
         if (selectedRewardName != null) {
             selectedRewardIndex = -1;
@@ -155,20 +154,40 @@ public class MainConfigScreen extends Screen {
         boolean hasToken = ModConfig.get().hasValidToken();
         RewardEntry selectedEntry = hasSelection ? rewardEntries.get(selectedRewardIndex) : null;
 
-        // Top row buttons
+        // Top buttons - two rows above the list
         int listX = 30;
         int listWidth = this.width - 60;
+        int topRowY = REWARDS_LIST_TOP - 46;  // First row
+        int secondRowY = REWARDS_LIST_TOP - 22;  // Second row (closer to list)
 
-        // Sync button - top left (only enabled when logged in)
+        // Row 1: Sync, Add/Templates buttons on right
         Button syncBtn = Button.builder(Component.literal("Sync from Twitch"), btn -> syncFromTwitch())
-                .pos(listX, REWARDS_LIST_TOP - 22)
-                .size(110, 20)
+                .pos(listX, topRowY)
+                .size(100, 20)
                 .tooltip(Tooltip.create(Component.literal("Import channel point rewards from your Twitch channel")))
                 .build();
         syncBtn.active = hasToken;
         this.addRenderableWidget(syncBtn);
 
-        // Show Hidden toggle button
+        // Add button (right side)
+        this.addRenderableWidget(Button.builder(Component.literal("+ Add"), btn -> {
+            this.minecraft.setScreen(new RewardEditorScreen(this, null, null));
+        })
+                .pos(listX + listWidth - 105, topRowY)
+                .size(50, 20)
+                .tooltip(Tooltip.create(Component.literal("Create a new custom reward")))
+                .build());
+
+        // Templates button (next to Add)
+        this.addRenderableWidget(Button.builder(Component.literal("Templates"), btn -> {
+            this.minecraft.setScreen(new TemplateSelectionScreen(this));
+        })
+                .pos(listX + listWidth - 52, topRowY)
+                .size(52, 20)
+                .tooltip(Tooltip.create(Component.literal("Add preset reward templates")))
+                .build());
+
+        // Row 2: Show Hidden, Disable All
         int hiddenCount = (int) ModConfig.get().getRewards().values().stream().filter(RewardAction::isHidden).count();
         String showHiddenText = showHiddenRewards ? "Hide Hidden (" + hiddenCount + ")" : "Show Hidden (" + hiddenCount + ")";
         Button showHiddenBtn = Button.builder(Component.literal(showHiddenText), btn -> {
@@ -177,20 +196,34 @@ public class MainConfigScreen extends Screen {
             selectedRewardName = null;
             rebuildWidgets();
         })
-                .pos(listX + 115, REWARDS_LIST_TOP - 22)
-                .size(100, 20)
+                .pos(listX, secondRowY)
+                .size(105, 20)
                 .tooltip(Tooltip.create(Component.literal("Toggle visibility of hidden rewards")))
                 .build();
         showHiddenBtn.active = hiddenCount > 0 || showHiddenRewards;
         this.addRenderableWidget(showHiddenBtn);
 
-        // Add button - top right of list area
-        this.addRenderableWidget(Button.builder(Component.literal("+ Add Reward"), btn -> {
-            this.minecraft.setScreen(new RewardEditorScreen(this, null, null));
+        // Disable All / Enable All button
+        boolean anyPublished = ModConfig.get().getRewards().values().stream()
+                .anyMatch(a -> a.hasTwitchReward() && a.getType() != null);
+        boolean anyDisabled = ModConfig.get().getRewards().values().stream()
+                .anyMatch(RewardAction::isTemporarilyDisabled);
+        String disableText = anyDisabled ? "Enable All" : "Disable All";
+        Button disableAllBtn = Button.builder(Component.literal(disableText), btn -> {
+            if (anyDisabled) {
+                enableAllRewards();
+            } else {
+                disableAllRewards();
+            }
         })
-                .pos(listX + listWidth - 100, REWARDS_LIST_TOP - 22)
-                .size(100, 20)
-                .build());
+                .pos(listX + 110, secondRowY)
+                .size(75, 20)
+                .tooltip(Tooltip.create(Component.literal(anyDisabled ?
+                        "Re-publish all temporarily disabled rewards" :
+                        "Temporarily unpublish all configured rewards")))
+                .build();
+        disableAllBtn.active = hasToken && (anyPublished || anyDisabled);
+        this.addRenderableWidget(disableAllBtn);
 
         // Create clickable buttons for each visible reward entry
         int listHeight = this.height - 165;  // More space for bottom buttons (2 rows + Done + margins)
@@ -280,10 +313,35 @@ public class MainConfigScreen extends Screen {
         Button deleteBtn = Button.builder(Component.literal("Delete"), btn -> {
             if (selectedRewardIndex >= 0 && selectedRewardIndex < rewardEntries.size()) {
                 RewardEntry entry = rewardEntries.get(selectedRewardIndex);
-                ModConfig.get().removeReward(entry.name);
-                selectedRewardIndex = -1;
-                selectedRewardName = null;
-                rebuildWidgets();
+                boolean isPublished = entry.action.hasTwitchReward();
+
+                if (isPublished) {
+                    // Show confirmation dialog warning about Twitch removal
+                    this.minecraft.setScreen(new ConfirmationScreen(
+                            this,
+                            "Delete Reward",
+                            "Delete \"" + entry.name + "\"?",
+                            "This will also remove it from Twitch!",
+                            () -> {
+                                // Unpublish from Twitch first, then remove locally
+                                String rewardId = entry.action.getTwitchRewardId();
+                                TwitchAPI.deleteReward(rewardId, success -> {
+                                    this.minecraft.execute(() -> {
+                                        ModConfig.get().removeReward(entry.name);
+                                        selectedRewardIndex = -1;
+                                        selectedRewardName = null;
+                                        rebuildWidgets();
+                                    });
+                                });
+                            }
+                    ));
+                } else {
+                    // Not published, just delete locally
+                    ModConfig.get().removeReward(entry.name);
+                    selectedRewardIndex = -1;
+                    selectedRewardName = null;
+                    rebuildWidgets();
+                }
             }
         })
                 .pos(row1StartX + buttonWidth + spacing, buttonY)
@@ -307,10 +365,10 @@ public class MainConfigScreen extends Screen {
         // Row 2: Publish/Update/Unpublish, Hide/Show (above row 1)
         int row2Y = buttonY - 24;
         boolean isPublished = selectedEntry != null && selectedEntry.action.hasTwitchReward();
-        // Random mob types don't need a value since they pick from a mob pool
-        boolean needsValue = selectedEntry != null &&
-                selectedEntry.action.getEffectiveType() != RewardAction.ActionType.RANDOM_MOB_SAME &&
-                selectedEntry.action.getEffectiveType() != RewardAction.ActionType.RANDOM_MOB_EACH;
+        // Random modes, SPECIAL type, and effect pool don't need a value since they pick randomly or have predefined behavior
+        boolean needsValue = selectedEntry != null && !selectedEntry.action.isRandomEnabled()
+                && selectedEntry.action.getType() != RewardAction.ActionType.SPECIAL
+                && !selectedEntry.action.isRandomEffectEnabled();
         boolean hasValue = selectedEntry != null &&
                 selectedEntry.action.getValue() != null && !selectedEntry.action.getValue().isEmpty();
         boolean canPublish = selectedEntry != null && !isPublished && (!needsValue || hasValue);
@@ -469,8 +527,9 @@ public class MainConfigScreen extends Screen {
                 } else if (syncStatus.equals("Syncing...")) {
                     color = (alpha << 24) | 0xFFFF55;
                 }
-                // Draw centered above the list
-                graphics.drawCenteredString(this.font, syncStatus, this.width / 2, REWARDS_LIST_TOP - 10, color);
+                // Draw on right side of second button row
+                int statusX = listX + listWidth - this.font.width(syncStatus);
+                graphics.drawString(this.font, syncStatus, statusX, REWARDS_LIST_TOP - 17, color);
             } else {
                 syncStatus = null;
             }
@@ -499,8 +558,9 @@ public class MainConfigScreen extends Screen {
                     && mouseY >= entryY && mouseY < entryY + REWARD_ENTRY_HEIGHT;
             // Only show as unconfigured (red) if it's a synced Twitch reward without an action
             // New rewards created via Add Reward shouldn't show red
-            boolean needsValue = entry.action.getEffectiveType() != RewardAction.ActionType.RANDOM_MOB_SAME &&
-                                 entry.action.getEffectiveType() != RewardAction.ActionType.RANDOM_MOB_EACH;
+            // Random modes, SPECIAL type, and effect pool don't need a value since they pick randomly or have predefined behavior
+            boolean needsValue = !entry.action.isRandomEnabled() && entry.action.getType() != RewardAction.ActionType.SPECIAL
+                    && !entry.action.isRandomEffectEnabled();
             boolean hasNoValue = entry.action.getValue() == null || entry.action.getValue().isEmpty();
             boolean isUnconfigured = entry.action.hasTwitchReward() && hasNoValue && needsValue;
             boolean isHidden = entry.action.isHidden();
@@ -546,10 +606,20 @@ public class MainConfigScreen extends Screen {
             // Status indicators on right side
             int rightX = listX + listWidth - 5;
 
-            // Published status indicator (green circle = published, gray circle = not published)
+            // Published status indicator (green = published, yellow = disabled, gray = not published)
             boolean isPublished = entry.action.hasTwitchReward();
+            boolean isDisabled = entry.action.isTemporarilyDisabled();
             String statusIcon = "\u25CF";  // Filled circle
-            int statusColor = isHidden ? 0xFF666666 : (isPublished ? 0xFF55FF55 : 0xFF888888);
+            int statusColor;
+            if (isHidden) {
+                statusColor = 0xFF666666;  // Dark gray for hidden
+            } else if (isDisabled) {
+                statusColor = 0xFFFFAA00;  // Yellow/orange for temporarily disabled
+            } else if (isPublished) {
+                statusColor = 0xFF55FF55;  // Green for published
+            } else {
+                statusColor = 0xFF888888;  // Gray for not published
+            }
             int statusWidth = this.font.width(statusIcon);
             graphics.drawString(this.font, statusIcon, rightX - statusWidth, entryY + 3, statusColor);
             rightX -= statusWidth + 5;
@@ -560,6 +630,16 @@ public class MainConfigScreen extends Screen {
                 int costWidth = this.font.width(costText);
                 int costColor = isHidden ? 0xFF886600 : 0xFFFFAA00;  // Dimmer for hidden
                 graphics.drawString(this.font, costText, rightX - costWidth, entryY + 3, costColor);
+                rightX -= costWidth + 5;
+            }
+
+            // Redemption count (on the second line, right side)
+            int redemptionCount = entry.action.getRedemptionCount();
+            if (redemptionCount > 0) {
+                String countText = redemptionCount + " redeemed";
+                int countWidth = this.font.width(countText);
+                int countColor = isHidden ? 0xFF555555 : 0xFF888888;
+                graphics.drawString(this.font, countText, listX + listWidth - 5 - countWidth, entryY + 14, countColor);
             }
         }
 
@@ -574,11 +654,12 @@ public class MainConfigScreen extends Screen {
 
     private String getActionDescription(RewardAction action) {
         String value = action.getValue();
-        RewardAction.ActionType effectiveType = action.getEffectiveType();
+        RewardAction.ActionType type = action.getType();
+        RewardAction.RandomMode randomMode = action.getRandomMode();
 
-        // Random mob types don't need a value
-        boolean needsValue = effectiveType != RewardAction.ActionType.RANDOM_MOB_SAME &&
-                            effectiveType != RewardAction.ActionType.RANDOM_MOB_EACH;
+        // Random modes, SPECIAL type, and effect pool don't need a value since they pick randomly or have predefined behavior
+        boolean needsValue = !action.isRandomEnabled() && type != RewardAction.ActionType.SPECIAL
+                && !action.isRandomEffectEnabled();
 
         if ((value == null || value.isEmpty()) && needsValue) {
             return "Not configured - click Edit to set up";
@@ -592,12 +673,47 @@ public class MainConfigScreen extends Screen {
             countStr = action.getCount() + "x";
         }
 
-        return switch (effectiveType) {
-            case SPAWN_MOB -> "Spawn " + countStr + " " + value;
-            case RANDOM_MOB_SAME -> "Spawn " + countStr + " Random Mob (same)";
-            case RANDOM_MOB_EACH -> "Spawn " + countStr + " Random Mobs (each different)";
-            case GIVE_ITEM -> "Give " + countStr + " " + value;
+        return switch (type) {
+            case SPAWN_MOB -> {
+                if (randomMode == RewardAction.RandomMode.ALL_SAME) {
+                    yield "Spawn " + countStr + " Random Mob (same)";
+                } else if (randomMode == RewardAction.RandomMode.EACH_DIFFERENT) {
+                    yield "Spawn " + countStr + " Random Mobs (each different)";
+                }
+                yield "Spawn " + countStr + " " + value;
+            }
+            case GIVE_ITEM -> {
+                if (randomMode == RewardAction.RandomMode.ALL_SAME) {
+                    yield "Give " + countStr + " Random Item (same)";
+                } else if (randomMode == RewardAction.RandomMode.EACH_DIFFERENT) {
+                    yield "Give " + countStr + " Random Items (each different)";
+                }
+                yield "Give " + countStr + " " + value;
+            }
             case EXECUTE_COMMAND -> "Command: " + truncate(value, 50);
+            case APPLY_EFFECT -> {
+                if (value != null && !value.isEmpty()) {
+                    String effectName = value.contains(":") ? value.split(":")[1] : value;
+                    yield "Effect: " + effectName + " (" + action.getEffectDuration() + "s, lvl " + (action.getEffectAmplifier() + 1) + ")";
+                }
+                yield "Apply Effect";
+            }
+            case PLAY_SOUND -> {
+                if (value != null && !value.isEmpty()) {
+                    String soundName = value.contains(":") ? value.split(":")[1] : value;
+                    yield "Sound: " + truncate(soundName, 40);
+                }
+                yield "Play Sound";
+            }
+            case SPECIAL -> {
+                if (value != null && !value.isEmpty()) {
+                    try {
+                        RewardAction.SpecialActionType specialType = RewardAction.SpecialActionType.valueOf(value);
+                        yield "Special: " + specialType.getDisplayName();
+                    } catch (IllegalArgumentException ignored) {}
+                }
+                yield "Special Action";
+            }
         };
     }
 
@@ -655,6 +771,7 @@ public class MainConfigScreen extends Screen {
                         action.setTwitchRewardId(rewardId);
                         action.setCost(cost);
                         action.setCooldownSeconds(cooldown);
+                        action.setHidden(true);  // Hidden by default until configured
 
                         ModConfig.get().setReward(title, action);
                         imported++;
@@ -846,6 +963,118 @@ public class MainConfigScreen extends Screen {
         });
     }
 
+    private void disableAllRewards() {
+        // Check if in test mode
+        if (TwitchEventSub.isTestMode()) {
+            syncStatus = "Disable unavailable in test mode";
+            syncStatusTime = System.currentTimeMillis();
+            return;
+        }
+
+        // Get all published rewards with configured actions
+        List<RewardEntry> toDisable = new ArrayList<>();
+        for (Map.Entry<String, RewardAction> entry : ModConfig.get().getRewards().entrySet()) {
+            RewardAction action = entry.getValue();
+            if (action.hasTwitchReward() && action.getType() != null) {
+                toDisable.add(new RewardEntry(entry.getKey(), action));
+            }
+        }
+
+        if (toDisable.isEmpty()) {
+            syncStatus = "No rewards to disable";
+            syncStatusTime = System.currentTimeMillis();
+            return;
+        }
+
+        syncStatus = "Disabling " + toDisable.size() + " rewards...";
+        syncStatusTime = System.currentTimeMillis();
+
+        // Track progress
+        final int[] remaining = {toDisable.size()};
+        final int[] succeeded = {0};
+
+        for (RewardEntry entry : toDisable) {
+            String rewardId = entry.action.getTwitchRewardId();
+            TwitchAPI.deleteReward(rewardId, success -> {
+                if (this.minecraft == null) return;
+
+                this.minecraft.execute(() -> {
+                    if (success) {
+                        // Store the ID for re-enabling later and clear current ID
+                        entry.action.setDisabledTwitchRewardId(rewardId);
+                        entry.action.setTwitchRewardId(null);
+                        ModConfig.get().setReward(entry.name, entry.action);
+                        succeeded[0]++;
+                    }
+                    remaining[0]--;
+
+                    if (remaining[0] == 0) {
+                        syncStatus = "Disabled " + succeeded[0] + " rewards";
+                        syncStatusTime = System.currentTimeMillis();
+                        rebuildWidgets();
+                    }
+                });
+            });
+        }
+    }
+
+    private void enableAllRewards() {
+        // Check if in test mode
+        if (TwitchEventSub.isTestMode()) {
+            syncStatus = "Enable unavailable in test mode";
+            syncStatusTime = System.currentTimeMillis();
+            return;
+        }
+
+        // Get all temporarily disabled rewards
+        List<RewardEntry> toEnable = new ArrayList<>();
+        for (Map.Entry<String, RewardAction> entry : ModConfig.get().getRewards().entrySet()) {
+            RewardAction action = entry.getValue();
+            if (action.isTemporarilyDisabled()) {
+                toEnable.add(new RewardEntry(entry.getKey(), action));
+            }
+        }
+
+        if (toEnable.isEmpty()) {
+            syncStatus = "No rewards to enable";
+            syncStatusTime = System.currentTimeMillis();
+            return;
+        }
+
+        syncStatus = "Enabling " + toEnable.size() + " rewards...";
+        syncStatusTime = System.currentTimeMillis();
+
+        // Track progress
+        final int[] remaining = {toEnable.size()};
+        final int[] succeeded = {0};
+
+        for (RewardEntry entry : toEnable) {
+            int cost = entry.action.getCost() > 0 ? entry.action.getCost() : 100;
+            int cooldown = entry.action.getCooldownSeconds();
+
+            TwitchAPI.createReward(entry.name, cost, cooldown, rewardId -> {
+                if (this.minecraft == null) return;
+
+                this.minecraft.execute(() -> {
+                    if (rewardId != null) {
+                        // Re-published - update with new ID and clear disabled state
+                        entry.action.setTwitchRewardId(rewardId);
+                        entry.action.setDisabledTwitchRewardId(null);
+                        ModConfig.get().setReward(entry.name, entry.action);
+                        succeeded[0]++;
+                    }
+                    remaining[0]--;
+
+                    if (remaining[0] == 0) {
+                        syncStatus = "Enabled " + succeeded[0] + " rewards";
+                        syncStatusTime = System.currentTimeMillis();
+                        rebuildWidgets();
+                    }
+                });
+            });
+        }
+    }
+
     // Track settings content height for scrolling
     private int settingsContentHeight = 0;
     private int settingsContentStartY = 0;
@@ -866,18 +1095,6 @@ public class MainConfigScreen extends Screen {
 
         boolean hasToken = ModConfig.get().hasValidToken();
         boolean isConnected = TwitchEventSub.isConnected();
-
-        // Check channel points status when logged in (only once, for warning display)
-        if (hasToken && !channelPointsChecked && !TwitchEventSub.isTestMode()) {
-            channelPointsChecked = true;
-            TwitchAPI.checkChannelPointsEnabled(result -> {
-                if (this.minecraft != null) {
-                    this.minecraft.execute(() -> {
-                        channelPointsEnabled = result;
-                    });
-                }
-            });
-        }
 
         // Connection Settings collapsible group (at top)
         String connectionStatus = !hasToken ? " (Not logged in)" : (isConnected ? " (Connected)" : " (Disconnected)");

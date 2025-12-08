@@ -1,6 +1,5 @@
 package andrew.slchannelpointmod.gui;
 
-import andrew.slchannelpointmod.rewards.RewardHandler;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -9,12 +8,8 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.MobCategory;
-import net.minecraft.world.item.Item;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
-import net.minecraft.world.item.SpawnEggItem;
+import net.minecraft.world.effect.MobEffect;
+import net.minecraft.world.effect.MobEffectCategory;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -23,39 +18,51 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
 
-public class MobPoolEditorScreen extends Screen {
+public class EffectPoolEditorScreen extends Screen {
     private final Screen parent;
     private final Consumer<List<String>> onSave;
     private final List<String> initialPool;
 
     private EditBox searchField;
-    private List<EntityType<?>> filteredEntities = new ArrayList<>();
-    private Set<String> selectedMobs = new HashSet<>();
+    private List<MobEffect> filteredEffects = new ArrayList<>();
+    private Set<String> selectedEffects = new HashSet<>();
     private int scrollOffset = 0;
 
-    // Grid layout constants
-    private static final int CELL_WIDTH = 90;
-    private static final int CELL_HEIGHT = 40;
+    private static final int CELL_WIDTH = 110;
+    private static final int CELL_HEIGHT = 24;
     private static final int GRID_PADDING = 10;
 
-    public MobPoolEditorScreen(Screen parent, List<String> currentPool, Consumer<List<String>> onSave) {
-        super(Component.literal("Configure Mob Pool"));
+    // Common effect presets
+    private static final List<String> HARMFUL_EFFECTS = List.of(
+            "minecraft:poison", "minecraft:wither", "minecraft:slowness",
+            "minecraft:mining_fatigue", "minecraft:instant_damage", "minecraft:nausea",
+            "minecraft:blindness", "minecraft:hunger", "minecraft:weakness",
+            "minecraft:levitation", "minecraft:bad_omen", "minecraft:darkness"
+    );
+
+    private static final List<String> BENEFICIAL_EFFECTS = List.of(
+            "minecraft:speed", "minecraft:haste", "minecraft:strength",
+            "minecraft:instant_health", "minecraft:jump_boost", "minecraft:regeneration",
+            "minecraft:resistance", "minecraft:fire_resistance", "minecraft:water_breathing",
+            "minecraft:invisibility", "minecraft:night_vision", "minecraft:health_boost",
+            "minecraft:absorption", "minecraft:saturation", "minecraft:luck",
+            "minecraft:slow_falling", "minecraft:conduit_power", "minecraft:dolphins_grace",
+            "minecraft:hero_of_the_village"
+    );
+
+    public EffectPoolEditorScreen(Screen parent, List<String> currentPool, Consumer<List<String>> onSave) {
+        super(Component.literal("Configure Effect Pool"));
         this.parent = parent;
         this.onSave = onSave;
         this.initialPool = currentPool;
 
-        // Load current pool
         if (currentPool != null && !currentPool.isEmpty()) {
-            selectedMobs.addAll(currentPool);
-        } else {
-            // Default to hostile mobs
-            selectedMobs.addAll(RewardHandler.DEFAULT_HOSTILE_MOBS);
+            selectedEffects.addAll(currentPool);
         }
     }
 
     @Override
     protected void init() {
-        // Register mouse event handlers using Fabric API
         ScreenMouseEvents.afterMouseClick(this).register((screen, click, consumed) -> {
             if (click.button() == 0 && !consumed) {
                 handleGridClick(click.x(), click.y());
@@ -75,7 +82,7 @@ public class MobPoolEditorScreen extends Screen {
         // Search field
         this.searchField = new EditBox(this.font, this.width / 2 - 100, 22, 200, 18,
                 Component.literal("Search"));
-        this.searchField.setHint(Component.literal("Search mobs..."));
+        this.searchField.setHint(Component.literal("Search effects..."));
         this.searchField.setResponder(this::updateSearch);
         this.addRenderableWidget(this.searchField);
 
@@ -85,41 +92,37 @@ public class MobPoolEditorScreen extends Screen {
         int totalWidth = btnWidth * 4 + 15;
         int startX = (this.width - totalWidth) / 2;
 
-        // All button
         this.addRenderableWidget(Button.builder(Component.literal("All"), btn -> {
-            for (EntityType<?> entityType : filteredEntities) {
-                ResourceLocation id = BuiltInRegistries.ENTITY_TYPE.getKey(entityType);
-                selectedMobs.add(id.toString());
+            for (MobEffect effect : filteredEffects) {
+                ResourceLocation id = BuiltInRegistries.MOB_EFFECT.getKey(effect);
+                if (id != null) selectedEffects.add(id.toString());
             }
         })
                 .pos(startX, btnY)
                 .size(btnWidth, 20)
                 .build());
 
-        // None button
         this.addRenderableWidget(Button.builder(Component.literal("None"), btn -> {
-            for (EntityType<?> entityType : filteredEntities) {
-                ResourceLocation id = BuiltInRegistries.ENTITY_TYPE.getKey(entityType);
-                selectedMobs.remove(id.toString());
+            for (MobEffect effect : filteredEffects) {
+                ResourceLocation id = BuiltInRegistries.MOB_EFFECT.getKey(effect);
+                if (id != null) selectedEffects.remove(id.toString());
             }
         })
                 .pos(startX + btnWidth + 5, btnY)
                 .size(btnWidth, 20)
                 .build());
 
-        // Hostile button
-        this.addRenderableWidget(Button.builder(Component.literal("Hostile"), btn -> {
-            selectedMobs.clear();
-            selectedMobs.addAll(RewardHandler.DEFAULT_HOSTILE_MOBS);
+        this.addRenderableWidget(Button.builder(Component.literal("Harmful"), btn -> {
+            selectedEffects.clear();
+            selectedEffects.addAll(HARMFUL_EFFECTS);
         })
                 .pos(startX + (btnWidth + 5) * 2, btnY)
                 .size(btnWidth, 20)
                 .build());
 
-        // Passive button
-        this.addRenderableWidget(Button.builder(Component.literal("Passive"), btn -> {
-            selectedMobs.clear();
-            selectedMobs.addAll(RewardHandler.DEFAULT_PASSIVE_MOBS);
+        this.addRenderableWidget(Button.builder(Component.literal("Beneficial"), btn -> {
+            selectedEffects.clear();
+            selectedEffects.addAll(BENEFICIAL_EFFECTS);
         })
                 .pos(startX + (btnWidth + 5) * 3, btnY)
                 .size(btnWidth, 20)
@@ -131,23 +134,19 @@ public class MobPoolEditorScreen extends Screen {
         int totalWidth2 = btnWidth2 * 2 + 5;
         int startX2 = (this.width - totalWidth2) / 2;
 
-        // Both (hostile + passive) button
         this.addRenderableWidget(Button.builder(Component.literal("Both"), btn -> {
-            selectedMobs.clear();
-            selectedMobs.addAll(RewardHandler.DEFAULT_HOSTILE_MOBS);
-            selectedMobs.addAll(RewardHandler.DEFAULT_PASSIVE_MOBS);
+            selectedEffects.clear();
+            selectedEffects.addAll(HARMFUL_EFFECTS);
+            selectedEffects.addAll(BENEFICIAL_EFFECTS);
         })
                 .pos(startX2, bottomY)
                 .size(btnWidth2, 20)
                 .build());
 
-        // Reset to original (undo changes)
         this.addRenderableWidget(Button.builder(Component.literal("Undo"), btn -> {
-            selectedMobs.clear();
+            selectedEffects.clear();
             if (initialPool != null && !initialPool.isEmpty()) {
-                selectedMobs.addAll(initialPool);
-            } else {
-                selectedMobs.addAll(RewardHandler.DEFAULT_HOSTILE_MOBS);
+                selectedEffects.addAll(initialPool);
             }
         })
                 .pos(startX2 + btnWidth2 + 5, bottomY)
@@ -168,8 +167,7 @@ public class MobPoolEditorScreen extends Screen {
     }
 
     private void saveAndClose() {
-        // Save the selected mobs
-        List<String> result = new ArrayList<>(selectedMobs);
+        List<String> result = new ArrayList<>(selectedEffects);
         onSave.accept(result.isEmpty() ? null : result);
         onClose();
     }
@@ -180,26 +178,34 @@ public class MobPoolEditorScreen extends Screen {
     }
 
     private void populateList(String filter) {
-        filteredEntities.clear();
+        filteredEffects.clear();
 
-        for (EntityType<?> entityType : BuiltInRegistries.ENTITY_TYPE) {
-            MobCategory category = entityType.getCategory();
-            if (category == MobCategory.MISC) continue;
+        for (MobEffect effect : BuiltInRegistries.MOB_EFFECT) {
+            ResourceLocation id = BuiltInRegistries.MOB_EFFECT.getKey(effect);
+            if (id == null) continue;
 
-            ResourceLocation id = BuiltInRegistries.ENTITY_TYPE.getKey(entityType);
-            String name = entityType.getDescription().getString();
+            String name = getEffectDisplayName(effect);
             String idStr = id.toString();
 
             if (filter.isEmpty() || name.toLowerCase().contains(filter) || idStr.contains(filter)) {
-                filteredEntities.add(entityType);
+                filteredEffects.add(effect);
             }
         }
 
-        filteredEntities.sort(Comparator.comparing(e -> e.getDescription().getString()));
+        filteredEffects.sort(Comparator.comparing(this::getEffectDisplayName));
+    }
+
+    private String getEffectDisplayName(MobEffect effect) {
+        try {
+            return Component.translatable(effect.getDescriptionId()).getString();
+        } catch (Exception e) {
+            ResourceLocation id = BuiltInRegistries.MOB_EFFECT.getKey(effect);
+            return id != null ? id.getPath() : "Unknown";
+        }
     }
 
     private int getGridStartY() { return 48; }
-    private int getGridHeight() { return this.height - 140; }
+    private int getGridHeight() { return this.height - 160; }
     private int getGridWidth() { return this.width - GRID_PADDING * 2; }
     private int getColumns() { return Math.max(1, getGridWidth() / CELL_WIDTH); }
     private int getVisibleRows() { return getGridHeight() / CELL_HEIGHT; }
@@ -207,22 +213,6 @@ public class MobPoolEditorScreen extends Screen {
         int cols = getColumns();
         int totalGridWidth = cols * CELL_WIDTH;
         return (this.width - totalGridWidth) / 2;
-    }
-
-    private ItemStack getSpawnEggForEntity(EntityType<?> entityType) {
-        for (Item item : BuiltInRegistries.ITEM) {
-            if (item instanceof SpawnEggItem spawnEgg) {
-                ItemStack stack = new ItemStack(spawnEgg);
-                try {
-                    if (spawnEgg.getType(stack) == entityType) {
-                        return stack;
-                    }
-                } catch (Exception e) {
-                    // Skip
-                }
-            }
-        }
-        return new ItemStack(Items.EGG);
     }
 
     @Override
@@ -236,7 +226,6 @@ public class MobPoolEditorScreen extends Screen {
         int cols = getColumns();
         int visibleRows = getVisibleRows();
 
-        // Background for grid
         int gridWidth = cols * CELL_WIDTH;
         int gridHeight = visibleRows * CELL_HEIGHT;
         graphics.fill(gridStartX - 2, gridStartY - 2,
@@ -246,15 +235,15 @@ public class MobPoolEditorScreen extends Screen {
 
         int itemsPerPage = cols * visibleRows;
         int startIndex = scrollOffset * cols;
-        int endIndex = Math.min(startIndex + itemsPerPage, filteredEntities.size());
+        int endIndex = Math.min(startIndex + itemsPerPage, filteredEffects.size());
 
-        String hoveredEntityName = null;
+        String hoveredEffectName = null;
 
         for (int i = startIndex; i < endIndex; i++) {
-            EntityType<?> entityType = filteredEntities.get(i);
-            ResourceLocation id = BuiltInRegistries.ENTITY_TYPE.getKey(entityType);
-            String displayName = entityType.getDescription().getString();
-            String idStr = id.toString();
+            MobEffect effect = filteredEffects.get(i);
+            ResourceLocation id = BuiltInRegistries.MOB_EFFECT.getKey(effect);
+            String displayName = getEffectDisplayName(effect);
+            String idStr = id != null ? id.toString() : "";
 
             int relIndex = i - startIndex;
             int col = relIndex % cols;
@@ -263,7 +252,7 @@ public class MobPoolEditorScreen extends Screen {
             int cellX = gridStartX + col * CELL_WIDTH;
             int cellY = gridStartY + row * CELL_HEIGHT;
 
-            boolean isSelected = selectedMobs.contains(idStr);
+            boolean isSelected = selectedEffects.contains(idStr);
             boolean isHovered = mouseX >= cellX && mouseX < cellX + CELL_WIDTH
                     && mouseY >= cellY && mouseY < cellY + CELL_HEIGHT;
 
@@ -274,7 +263,7 @@ public class MobPoolEditorScreen extends Screen {
             }
 
             if (isHovered) {
-                hoveredEntityName = displayName + " (" + idStr + ")";
+                hoveredEffectName = displayName + " (" + idStr + ")";
             }
 
             // Border
@@ -288,33 +277,28 @@ public class MobPoolEditorScreen extends Screen {
 
             // Checkbox
             int checkX = cellX + 2;
-            int checkY = cellY + 2;
+            int checkY = cellY + (CELL_HEIGHT - 8) / 2;
             graphics.fill(checkX, checkY, checkX + 8, checkY + 8, 0xFF333333);
             if (isSelected) {
                 graphics.fill(checkX + 1, checkY + 1, checkX + 7, checkY + 7, 0xFF55FF55);
             }
 
-            // Spawn egg icon
-            ItemStack spawnEgg = getSpawnEggForEntity(entityType);
-            graphics.renderItem(spawnEgg, cellX + (CELL_WIDTH - 16) / 2 - 1, cellY + 2);
-
-            // Name
-            String truncatedName = truncateName(displayName, CELL_WIDTH - 4);
-            int nameWidth = this.font.width(truncatedName);
-            int nameColor = isSelected ? 0xFFFFFFFF : getCategoryColor(entityType.getCategory());
-            graphics.drawString(this.font, truncatedName, cellX + (CELL_WIDTH - nameWidth) / 2 - 1, cellY + 22, nameColor);
+            // Name with category color
+            String truncatedName = truncateName(displayName, CELL_WIDTH - 16);
+            int nameColor = isSelected ? 0xFFFFFFFF : getCategoryColor(effect.getCategory());
+            graphics.drawString(this.font, truncatedName, cellX + 14, cellY + (CELL_HEIGHT - 8) / 2, nameColor);
         }
 
         // Hovered info
-        if (hoveredEntityName != null) {
-            graphics.drawCenteredString(this.font, hoveredEntityName, this.width / 2, gridStartY + gridHeight + 4, 0xFFAAAAAA);
+        if (hoveredEffectName != null) {
+            graphics.drawCenteredString(this.font, hoveredEffectName, this.width / 2, gridStartY + gridHeight + 4, 0xFFAAAAAA);
         }
 
         // Count
-        graphics.drawCenteredString(this.font, selectedMobs.size() + " mobs selected", this.width / 2, gridStartY + gridHeight + 16, 0xFFAAAAAA);
+        graphics.drawCenteredString(this.font, selectedEffects.size() + " effects selected", this.width / 2, gridStartY + gridHeight + 16, 0xFFAAAAAA);
 
         // Scroll indicator
-        int totalRows = (int) Math.ceil((double) filteredEntities.size() / cols);
+        int totalRows = (int) Math.ceil((double) filteredEffects.size() / cols);
         if (totalRows > visibleRows) {
             String scrollText = "Row " + (scrollOffset + 1) + "-" + Math.min(scrollOffset + visibleRows, totalRows) + " of " + totalRows;
             graphics.drawCenteredString(this.font, scrollText, this.width / 2, gridStartY + gridHeight + 28, 0xFF888888);
@@ -333,14 +317,11 @@ public class MobPoolEditorScreen extends Screen {
         return sb + ellipsis;
     }
 
-    private int getCategoryColor(MobCategory category) {
+    private int getCategoryColor(MobEffectCategory category) {
         return switch (category) {
-            case MONSTER -> 0xFFFF5555;
-            case CREATURE -> 0xFF55FF55;
-            case AMBIENT -> 0xFFAAAAAA;
-            case WATER_CREATURE, WATER_AMBIENT, UNDERGROUND_WATER_CREATURE -> 0xFF55AAFF;
-            case AXOLOTLS -> 0xFFFFAA00;
-            case MISC -> 0xFF888888;
+            case HARMFUL -> 0xFFFF5555;
+            case BENEFICIAL -> 0xFF55FF55;
+            case NEUTRAL -> 0xFFAAAAFF;
         };
     }
 
@@ -351,7 +332,7 @@ public class MobPoolEditorScreen extends Screen {
         int visibleRows = getVisibleRows();
         int itemsPerPage = cols * visibleRows;
         int startIndex = scrollOffset * cols;
-        int endIndex = Math.min(startIndex + itemsPerPage, filteredEntities.size());
+        int endIndex = Math.min(startIndex + itemsPerPage, filteredEffects.size());
 
         for (int i = startIndex; i < endIndex; i++) {
             int relIndex = i - startIndex;
@@ -362,14 +343,15 @@ public class MobPoolEditorScreen extends Screen {
 
             if (mouseX >= cellX && mouseX < cellX + CELL_WIDTH
                     && mouseY >= cellY && mouseY < cellY + CELL_HEIGHT) {
-                EntityType<?> entityType = filteredEntities.get(i);
-                ResourceLocation id = BuiltInRegistries.ENTITY_TYPE.getKey(entityType);
+                MobEffect effect = filteredEffects.get(i);
+                ResourceLocation id = BuiltInRegistries.MOB_EFFECT.getKey(effect);
+                if (id == null) return;
                 String idStr = id.toString();
 
-                if (selectedMobs.contains(idStr)) {
-                    selectedMobs.remove(idStr);
+                if (selectedEffects.contains(idStr)) {
+                    selectedEffects.remove(idStr);
                 } else {
-                    selectedMobs.add(idStr);
+                    selectedEffects.add(idStr);
                 }
                 return;
             }
@@ -379,7 +361,7 @@ public class MobPoolEditorScreen extends Screen {
     private void handleScroll(double verticalAmount) {
         int cols = getColumns();
         int visibleRows = getVisibleRows();
-        int totalRows = (int) Math.ceil((double) filteredEntities.size() / cols);
+        int totalRows = (int) Math.ceil((double) filteredEffects.size() / cols);
         int maxScroll = Math.max(0, totalRows - visibleRows);
         scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset - (int) verticalAmount));
     }

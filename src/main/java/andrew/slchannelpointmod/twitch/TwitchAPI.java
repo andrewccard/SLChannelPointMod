@@ -17,6 +17,7 @@ public class TwitchAPI {
     private static final String PRODUCTION_API = "https://api.twitch.tv/helix";
     // Twitch CLI mock-api uses /mock prefix
     private static final String TEST_API = "http://localhost:8080/mock";
+    private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
 
     private static String getApiBase() {
         return TwitchEventSub.isTestMode() ? TEST_API : PRODUCTION_API;
@@ -45,7 +46,6 @@ public class TwitchAPI {
                 body.addProperty("global_cooldown_seconds", cooldownSeconds);
             }
 
-            HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(getApiBase() + "/channel_points/custom_rewards?broadcaster_id=" + channelId))
                     .header("Authorization", "Bearer " + token)
@@ -54,7 +54,7 @@ public class TwitchAPI {
                     .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                     .build();
 
-            client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+            HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                     .thenAccept(response -> {
                         if (response.statusCode() == 200) {
                             try {
@@ -107,7 +107,6 @@ public class TwitchAPI {
                 body.addProperty("is_global_cooldown_enabled", false);
             }
 
-            HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(getApiBase() + "/channel_points/custom_rewards?broadcaster_id=" + channelId + "&id=" + rewardId))
                     .header("Authorization", "Bearer " + token)
@@ -116,7 +115,7 @@ public class TwitchAPI {
                     .method("PATCH", HttpRequest.BodyPublishers.ofString(body.toString()))
                     .build();
 
-            client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+            HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                     .thenAccept(response -> {
                         if (response.statusCode() == 200) {
                             SLChannelPointMod.LOGGER.info("Updated Twitch reward: " + rewardId);
@@ -148,7 +147,6 @@ public class TwitchAPI {
         }
 
         try {
-            HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(getApiBase() + "/channel_points/custom_rewards?broadcaster_id=" + channelId + "&id=" + rewardId))
                     .header("Authorization", "Bearer " + token)
@@ -156,7 +154,7 @@ public class TwitchAPI {
                     .DELETE()
                     .build();
 
-            client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+            HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                     .thenAccept(response -> {
                         if (response.statusCode() == 204) {
                             SLChannelPointMod.LOGGER.info("Deleted Twitch reward: " + rewardId);
@@ -177,54 +175,6 @@ public class TwitchAPI {
         }
     }
 
-    /**
-     * Check if channel points are enabled for the channel.
-     * Channel points require affiliate or partner status.
-     * @param callback receives true if enabled, false if not, null on error
-     */
-    public static void checkChannelPointsEnabled(Consumer<Boolean> callback) {
-        String token = ModConfig.get().getAccessToken();
-        String channelId = ModConfig.get().getChannelId();
-
-        if (token == null || token.isEmpty() || channelId == null || channelId.isEmpty()) {
-            callback.accept(null);
-            return;
-        }
-
-        try {
-            HttpClient client = HttpClient.newHttpClient();
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(getApiBase() + "/channel_points/custom_rewards?broadcaster_id=" + channelId))
-                    .header("Authorization", "Bearer " + token)
-                    .header("Client-Id", TwitchAuth.getClientId())
-                    .GET()
-                    .build();
-
-            client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                    .thenAccept(response -> {
-                        if (response.statusCode() == 200) {
-                            // Successfully got rewards - channel points are enabled
-                            callback.accept(true);
-                        } else if (response.statusCode() == 403) {
-                            // 403 Forbidden means channel points not available (not affiliate/partner)
-                            callback.accept(false);
-                        } else {
-                            // Other error
-                            SLChannelPointMod.LOGGER.warn("Channel points check returned status: " + response.statusCode());
-                            callback.accept(null);
-                        }
-                    })
-                    .exceptionally(e -> {
-                        SLChannelPointMod.LOGGER.error("Failed to check channel points", e);
-                        callback.accept(null);
-                        return null;
-                    });
-        } catch (Exception e) {
-            SLChannelPointMod.LOGGER.error("Failed to check channel points", e);
-            callback.accept(null);
-        }
-    }
-
     public static void getRewards(Consumer<JsonArray> callback) {
         String token = ModConfig.get().getAccessToken();
         String channelId = ModConfig.get().getChannelId();
@@ -236,7 +186,6 @@ public class TwitchAPI {
         }
 
         try {
-            HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(getApiBase() + "/channel_points/custom_rewards?broadcaster_id=" + channelId))
                     .header("Authorization", "Bearer " + token)
@@ -244,7 +193,7 @@ public class TwitchAPI {
                     .GET()
                     .build();
 
-            client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+            HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                     .thenAccept(response -> {
                         if (response.statusCode() == 200) {
                             try {

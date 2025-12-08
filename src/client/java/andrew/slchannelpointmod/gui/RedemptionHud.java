@@ -2,7 +2,7 @@ package andrew.slchannelpointmod.gui;
 
 import andrew.slchannelpointmod.config.ModConfig;
 import andrew.slchannelpointmod.config.ModConfig.HudPosition;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import andrew.slchannelpointmod.twitch.TwitchEventSub;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -12,12 +12,17 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-public class RedemptionHud implements HudRenderCallback {
+public class RedemptionHud {
     private static final List<RedemptionEntry> entries = new ArrayList<>();
     private static final long DISPLAY_TIME_MS = 5000;  // 5 seconds
     private static final long FADE_TIME_MS = 500;      // 0.5 second fade out
     private static final int ENTRY_HEIGHT = 14;
     private static final int PADDING = 10;
+
+    // Connection indicator state
+    private static long connectedTimestamp = 0;
+    private static boolean wasConnected = false;
+    private static final long CONNECTED_DISPLAY_TIME_MS = 2000; // Show for 2 seconds after connecting
 
     public static void addRedemption(String userName, String rewardTitle, int count) {
         // Schedule on main client thread to be safe
@@ -41,10 +46,12 @@ public class RedemptionHud implements HudRenderCallback {
         }
     }
 
-    @Override
-    public void onHudRender(GuiGraphics graphics, DeltaTracker deltaTracker) {
+    public static void render(GuiGraphics graphics, DeltaTracker deltaTracker) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.options.hideGui) return;
+
+        // Render connection indicator
+        renderConnectionIndicator(graphics, mc);
 
         synchronized (entries) {
             if (entries.isEmpty()) return;
@@ -140,6 +147,89 @@ public class RedemptionHud implements HudRenderCallback {
 
             poseStack.popMatrix();
         }
+    }
+
+    private static void renderConnectionIndicator(GuiGraphics graphics, Minecraft mc) {
+        // Only show if user has a token configured
+        if (!ModConfig.get().hasValidToken()) return;
+
+        boolean isConnected = TwitchEventSub.isConnected();
+        boolean isTestMode = TwitchEventSub.isTestMode();
+
+        // Track when we became connected
+        if (isConnected && !wasConnected) {
+            connectedTimestamp = System.currentTimeMillis();
+        }
+        wasConnected = isConnected;
+
+        // If connected (and not test mode), hide after the display time
+        if (isConnected && !isTestMode) {
+            long elapsed = System.currentTimeMillis() - connectedTimestamp;
+            if (elapsed > CONNECTED_DISPLAY_TIME_MS) {
+                return; // Don't render - hide the indicator
+            }
+        }
+
+        String statusText;
+        int statusColor;
+
+        if (isTestMode) {
+            statusText = "\u25CF Test Mode";
+            statusColor = 0xFFFFAA00; // Orange
+        } else if (isConnected) {
+            statusText = "\u25CF Twitch Connected";
+            statusColor = 0xFF55FF55; // Green
+        } else {
+            statusText = "\u25CF Twitch Disconnected";
+            statusColor = 0xFFFF5555; // Red
+        }
+
+        // Get HUD position setting
+        HudPosition position = ModConfig.get().getHudPosition();
+        float scale = ModConfig.get().getHudScale();
+
+        int screenWidth = mc.getWindow().getGuiScaledWidth();
+        int screenHeight = mc.getWindow().getGuiScaledHeight();
+
+        // Place indicator in the same corner as redemptions, but at the very edge
+        boolean isTop = (position == HudPosition.TOP_LEFT || position == HudPosition.TOP_RIGHT);
+        boolean isLeft = (position == HudPosition.TOP_LEFT || position == HudPosition.BOTTOM_LEFT);
+
+        int textWidth = mc.font.width(statusText);
+
+        // Apply scale
+        Matrix3x2fStack poseStack = graphics.pose();
+        poseStack.pushMatrix();
+
+        float anchorX = isLeft ? 0 : screenWidth;
+        float anchorY = isTop ? 0 : screenHeight;
+
+        poseStack.translate(anchorX, anchorY);
+        poseStack.scale(scale, scale);
+        poseStack.translate(-anchorX / scale, -anchorY / scale);
+
+        int x, y;
+        if (isLeft) {
+            x = PADDING;
+        } else {
+            x = (int)(screenWidth / scale) - textWidth - PADDING;
+        }
+
+        if (isTop) {
+            // At very top, above redemptions
+            y = 2;
+        } else {
+            // At very bottom
+            y = (int)(screenHeight / scale) - 12;
+        }
+
+        // Semi-transparent background
+        graphics.fill(x - 2, y - 1, x + textWidth + 2, y + 9, 0x80000000);
+
+        // Status text
+        graphics.drawString(mc.font, statusText, x, y, statusColor, false);
+
+        poseStack.popMatrix();
     }
 
     private record RedemptionEntry(String userName, String rewardTitle, long timestamp) {}

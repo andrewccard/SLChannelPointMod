@@ -20,6 +20,7 @@ public class TwitchEventSub {
     private static final String TEST_URL = "ws://127.0.0.1:8080/ws";
     private static final String PRODUCTION_API = "https://api.twitch.tv/helix";
     private static final String TEST_API = "http://127.0.0.1:8080/mock";
+    private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
 
     private static boolean testMode = false;
 
@@ -234,7 +235,6 @@ public class TwitchEventSub {
             transport.addProperty("session_id", sessionId);
             body.add("transport", transport);
 
-            HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(getApiBase() + "/eventsub/subscriptions"))
                     .header("Authorization", "Bearer " + token)
@@ -243,7 +243,7 @@ public class TwitchEventSub {
                     .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                     .build();
 
-            client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+            HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                     .thenAccept(response -> {
                         if (response.statusCode() == 202) {
                             SLChannelPointMod.LOGGER.info("Successfully subscribed to channel point redemptions");

@@ -139,7 +139,7 @@ public class RewardListScreen extends Screen {
         @Override
         public void renderContent(GuiGraphics graphics, int index, int top, boolean hovered, float delta) {
             int left = rewardList.getRowLeft();
-            int width = rewardList.getRowWidth();
+            int rowWidth = rewardList.getRowWidth();
 
             // Reward name (ARGB format for MC 1.21+)
             graphics.drawString(font, name, left + 5, top + 2, 0xFFFFFFFF);
@@ -152,17 +152,58 @@ public class RewardListScreen extends Screen {
             if (action.getCost() > 0) {
                 String costText = action.getCost() + " pts";
                 int costWidth = font.width(costText);
-                graphics.drawString(font, costText, left + width - costWidth - 5, top + 2, 0xFFFFAA00);
+                graphics.drawString(font, costText, left + rowWidth - costWidth - 5, top + 2, 0xFFFFAA00);
             }
         }
 
         private String getActionDescription() {
-            return switch (action.getEffectiveType()) {
-                case SPAWN_MOB -> "Spawn " + action.getCount() + "x " + action.getValue();
-                case RANDOM_MOB_SAME -> "Spawn " + action.getCount() + "x Random Mob (same)";
-                case RANDOM_MOB_EACH -> "Spawn " + action.getCount() + "x Random Mobs (each different)";
-                case GIVE_ITEM -> "Give " + action.getCount() + "x " + action.getValue();
+            RewardAction.ActionType type = action.getType();
+            RewardAction.RandomMode randomMode = action.getRandomMode();
+
+            return switch (type) {
+                case SPAWN_MOB -> {
+                    if (randomMode == RewardAction.RandomMode.ALL_SAME) {
+                        yield "Spawn " + action.getCount() + "x Random Mob (same)";
+                    } else if (randomMode == RewardAction.RandomMode.EACH_DIFFERENT) {
+                        yield "Spawn " + action.getCount() + "x Random Mobs (each different)";
+                    }
+                    yield "Spawn " + action.getCount() + "x " + action.getValue();
+                }
+                case GIVE_ITEM -> {
+                    if (randomMode == RewardAction.RandomMode.ALL_SAME) {
+                        yield "Give " + action.getCount() + "x Random Item (same)";
+                    } else if (randomMode == RewardAction.RandomMode.EACH_DIFFERENT) {
+                        yield "Give " + action.getCount() + "x Random Items (each different)";
+                    }
+                    yield "Give " + action.getCount() + "x " + action.getValue();
+                }
                 case EXECUTE_COMMAND -> "Command: " + truncate(action.getValue(), 40);
+                case APPLY_EFFECT -> {
+                    String effectId = action.getValue();
+                    if (effectId != null && !effectId.isEmpty()) {
+                        String effectName = effectId.contains(":") ? effectId.split(":")[1] : effectId;
+                        yield "Effect: " + effectName + " (" + action.getEffectDuration() + "s, lvl " + (action.getEffectAmplifier() + 1) + ")";
+                    }
+                    yield "Apply Effect";
+                }
+                case PLAY_SOUND -> {
+                    String soundId = action.getValue();
+                    if (soundId != null && !soundId.isEmpty()) {
+                        String soundName = soundId.contains(":") ? soundId.split(":")[1] : soundId;
+                        yield "Sound: " + truncate(soundName, 30);
+                    }
+                    yield "Play Sound";
+                }
+                case SPECIAL -> {
+                    String value = action.getValue();
+                    if (value != null && !value.isEmpty()) {
+                        try {
+                            RewardAction.SpecialActionType specialType = RewardAction.SpecialActionType.valueOf(value);
+                            yield "Special: " + specialType.getDisplayName();
+                        } catch (IllegalArgumentException ignored) {}
+                    }
+                    yield "Special Action";
+                }
             };
         }
 
@@ -174,11 +215,6 @@ public class RewardListScreen extends Screen {
         @Override
         public Component getNarration() {
             return Component.literal(name);
-        }
-
-        public boolean handleClick() {
-            rewardList.setSelected(this);
-            return true;
         }
     }
 }

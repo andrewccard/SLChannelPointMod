@@ -23,6 +23,7 @@ public class TwitchAuth {
     private static final int CALLBACK_PORT = 17563;
     private static final String REDIRECT_URI = "http://localhost:" + CALLBACK_PORT + "/callback";
     private static final String SCOPES = "channel:read:redemptions+channel:manage:redemptions";
+    private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
 
     private static HttpServer callbackServer;
     private static CompletableFuture<String> authCodeFuture;
@@ -205,7 +206,6 @@ public class TwitchAuth {
 
     private static void fetchUserInfo(String token, Consumer<Boolean> callback) {
         try {
-            HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create("https://api.twitch.tv/helix/users"))
                     .header("Authorization", "Bearer " + token)
@@ -213,7 +213,7 @@ public class TwitchAuth {
                     .GET()
                     .build();
 
-            client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+            HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                     .thenAccept(response -> {
                         if (response.statusCode() == 200) {
                             JsonObject json = JsonParser.parseString(response.body()).getAsJsonObject();
@@ -249,14 +249,13 @@ public class TwitchAuth {
         }
 
         try {
-            HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create("https://id.twitch.tv/oauth2/validate"))
                     .header("Authorization", "OAuth " + token)
                     .GET()
                     .build();
 
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
             return response.statusCode() == 200;
         } catch (Exception e) {
             SLChannelPointMod.LOGGER.error("Failed to validate token", e);
